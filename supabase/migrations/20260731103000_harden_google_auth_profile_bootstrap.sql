@@ -1,23 +1,15 @@
 /*
-# First user becomes admin (bootstrap admin)
+# Harden Google OAuth profile bootstrap
 
-## Problem
-The app has an Admin area (Admin overview + Settings) gated by
-`profile.role = 'admin'`. With the previous trigger every new user got
-`role = 'member'`, so no one could ever reach the admin screens — the first
-person to sign up should be the club admin.
-
-## Change
-- Replace `handle_new_user()` so that IF there are zero existing profiles,
-  the new user is inserted with `role = 'admin'`; otherwise `role = 'member'`.
-- The trigger is dropped and recreated to bind the new function.
-- Safe to re-run (DROP IF EXISTS guards).
-
-## Notes
-- No data is lost. Existing profiles keep their current role.
-- This only affects rows created by the trigger (new signups). Manually
-  changing a role via SQL is still possible later.
+Ensures every authenticated user can get a matching public.profiles row after
+OAuth/email signup. Without this, the frontend can have a valid Supabase session
+but no profile, which makes routing look like a login/loading loop.
 */
+
+DROP POLICY IF EXISTS "profiles_insert_self" ON public.profiles;
+CREATE POLICY "profiles_insert_self" ON public.profiles
+  FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() = id);
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
@@ -41,6 +33,7 @@ BEGIN
     false
   )
   ON CONFLICT (id) DO NOTHING;
+
   RETURN NEW;
 END;
 $$;
@@ -49,3 +42,16 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+INSERT INTO public.profiles (id, email, full_name, photo_url, role, onboarded)
+SELECT
+  u.id,
+  COALESCE(u.email, ''),
+  COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name'),
+  COALESCE(u.raw_user_meta_data->>'avatar_url', u.raw_user_meta_data->>'picture'),
+  'member',
+  false
+FROM auth.users u
+LEFT JOIN public.profiles p ON p.id = u.id
+WHERE p.id IS NULL
+ON CONFLICT (id) DO NOTHING;

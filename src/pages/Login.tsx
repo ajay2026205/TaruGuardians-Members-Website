@@ -21,7 +21,7 @@ export default function Login() {
 
   useEffect(() => {
     if (session) navigate('/onboarding-check', { replace: true })
-  }, [session, navigate])
+  }, [navigate, session])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
