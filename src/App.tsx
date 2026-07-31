@@ -58,7 +58,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={session ? <Navigate to="/onboarding-check" replace /> : <Login />} />
+      <Route path="/login" element={session && !authError ? <Navigate to="/onboarding-check" replace /> : <Login />} />
       <Route
         path="/onboarding-check"
         element={
