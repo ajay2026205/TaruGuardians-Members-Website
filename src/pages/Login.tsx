@@ -6,6 +6,8 @@ import { Logo } from '../components/Logo'
 import { Spinner } from '../components/ui'
 import { Mail, Lock, User, Chrome, ShieldCheck, Zap, Users } from 'lucide-react'
 
+export const LOGIN_VERSION = 'v2.2'
+
 export default function Login() {
   const navigate = useNavigate()
   const { session } = useAuth()
@@ -29,6 +31,10 @@ export default function Login() {
       setError('Please enter your email and password.')
       return
     }
+    if (mode === 'signup' && password.length < 6) {
+      setError('Password must be at least 6 characters.')
+      return
+    }
     setLoading(true)
 
     if (mode === 'signup') {
@@ -50,20 +56,26 @@ export default function Login() {
         setLoading(false)
         return
       }
-      // session is set — onAuthStateChange will fire and route the user
+      if (data.session) {
+        navigate('/onboarding-check', { replace: true })
+        return
+      }
       setLoading(false)
       return
     }
 
-    const { error: signInErr } = await supabase.auth.signInWithPassword({
+    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     })
     if (signInErr) {
       setError(signInErr.message)
       setLoading(false)
+      return
     }
-    // on success, onAuthStateChange fires -> useEffect redirects
+    if (signInData.session) {
+      navigate('/onboarding-check', { replace: true })
+    }
   }
 
   const handleGoogle = async () => {
@@ -209,6 +221,8 @@ export default function Login() {
             )
           })}
         </div>
+
+        <p className="mt-4 text-center text-[10px] text-slate-700">{LOGIN_VERSION}</p>
       </div>
     </div>
   )

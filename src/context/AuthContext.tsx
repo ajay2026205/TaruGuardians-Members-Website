@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, type Profile } from '../lib/supabase'
 
@@ -22,44 +22,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const profileLoadingFor = useRef<string | null>(null)
 
   const loadProfile = async (uid: string, email: string, userMeta?: Record<string, unknown>) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', uid)
-      .maybeSingle()
-    if (error) {
-      console.error('profile load error', error)
-      setProfile(null)
-      return
+    if (profileLoadingFor.current === uid) return
+    profileLoadingFor.current = uid
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .maybeSingle()
+
+      if (error) {
+        console.error('[auth] profile load error:', error.message)
+        setProfile(null)
+        return
+      }
+
+      if (data) {
+        setProfile(data as Profile)
+        return
+      }
+
+      // Trigger may not have fired yet — try to create the profile.
+      // If trigger already created it (race), insert fails harmlessly.
+      const { data: created, error: cerr } = await supabase
+        .from('profiles')
+        .insert({
+          id: uid,
+          email,
+          full_name:
+            (userMeta?.full_name as string) ??
+            (userMeta?.name as string) ??
+            null,
+          photo_url:
+            (userMeta?.avatar_url as string) ??
+            (userMeta?.picture as string) ??
+            null,
+          role: 'member',
+          onboarded: false,
+        })
+        .select('*')
+        .maybeSingle()
+
+      if (cerr) {
+        // Likely race: trigger already inserted. Re-read.
+        if (cerr.code === '23505') {
+          const { data: retry } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', uid)
+            .maybeSingle()
+          if (retry) setProfile(retry as Profile)
+          else setProfile(null)
+          return
+        }
+        console.error('[auth] profile create error:', cerr.message)
+        setProfile(null)
+        return
+      }
+
+      if (created) setProfile(created as Profile)
+      else setProfile(null)
+    } finally {
+      profileLoadingFor.current = null
     }
-    if (data) {
-      setProfile(data as Profile)
-      return
-    }
-    const { data: created, error: cerr } = await supabase
-      .from('profiles')
-      .insert({
-        id: uid,
-        email: email,
-        full_name: (userMeta?.full_name as string) ?? (userMeta?.name as string) ?? null,
-        photo_url: (userMeta?.avatar_url as string) ?? (userMeta?.picture as string) ?? null,
-        role: 'member',
-        onboarded: false,
-      })
-      .select('*')
-      .maybeSingle()
-    if (cerr) {
-      console.error('profile create error', cerr)
-      setProfile(null)
-      return
-    }
-    if (created) setProfile(created as Profile)
   }
 
   const refreshProfile = async () => {
-    if (session?.user?.id) await loadProfile(session.user.id, session.user.email ?? '', session?.user?.user_metadata)
+    if (session?.user?.id) {
+      profileLoadingFor.current = null
+      await loadProfile(session.user.id, session.user.email ?? '', session?.user?.user_metadata)
+    }
   }
 
   useEffect(() => {
@@ -83,11 +119,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ;(async () => {
         setSession(newSession)
         if (newSession?.user?.id) {
-          await loadProfile(newSession.user.id, newSession.user.email ?? '', newSession.user.user_metadata)
+          profileLoadingFor.current = null
+          await loadProfile(
+            newSession.user.id,
+            newSession.user.email ?? '',
+            newSession.user.user_metadata,
+          )
         } else {
           setProfile(null)
         }
-        setLoading(false)
+        if (mounted) setLoading(false)
       })()
     })
 
@@ -99,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = async () => {
+    profileLoadingFor.current = null
     await supabase.auth.signOut()
     setSession(null)
     setProfile(null)
