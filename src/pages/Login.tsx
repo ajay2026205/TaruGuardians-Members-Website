@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { Logo } from '../components/Logo'
@@ -10,7 +10,8 @@ export const LOGIN_VERSION = 'v2.2'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { session } = useAuth()
+  const location = useLocation()
+  const { session, authError, signOut } = useAuth()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -20,6 +21,15 @@ export default function Login() {
   const [info, setInfo] = useState<string | null>(null)
 
   useEffect(() => {
+    const routeError = (location.state as { authError?: string } | null)?.authError
+    if (routeError) setError(routeError)
+  }, [location.state])
+
+  useEffect(() => {
+    if (session && authError) {
+      void signOut()
+      return
+    }
     if (session) navigate('/onboarding-check', { replace: true })
   }, [navigate, session])
 

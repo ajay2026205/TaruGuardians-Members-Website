@@ -49,7 +49,7 @@ function AdminOnly({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { session, profile, loading, profileLoading, authError } = useAuth()
+  const { session, profile, loading, profileLoading } = useAuth()
 
   if (loading) return <FullPageLoader label="Loading TaruGuardians…" />
 
@@ -58,7 +58,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={session ? <Navigate to="/onboarding-check" replace /> : <Login />} />
+      <Route path="/login" element={session && !authError ? <Navigate to="/onboarding-check" replace /> : <Login />} />
       <Route
         path="/onboarding-check"
         element={
