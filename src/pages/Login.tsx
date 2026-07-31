@@ -31,7 +31,7 @@ export default function Login() {
       return
     }
     if (session) navigate('/onboarding-check', { replace: true })
-  }, [authError, navigate, session, signOut])
+  }, [navigate, session])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
