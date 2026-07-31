@@ -31,29 +31,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .maybeSingle()
     if (error) {
       console.error('profile load error', error)
+      setProfile(null)
       return
     }
     if (data) {
       setProfile(data as Profile)
-    } else {
-      const { data: created, error: cerr } = await supabase
-        .from('profiles')
-        .insert({
-          id: uid,
-          email: email,
-          full_name: (userMeta?.full_name as string) ?? (userMeta?.name as string) ?? null,
-          photo_url: (userMeta?.avatar_url as string) ?? (userMeta?.picture as string) ?? null,
-          role: 'member',
-          onboarded: false,
-        })
-        .select('*')
-        .maybeSingle()
-      if (cerr) {
-        console.error('profile create error', cerr)
-        return
-      }
-      if (created) setProfile(created as Profile)
+      return
     }
+    const { data: created, error: cerr } = await supabase
+      .from('profiles')
+      .insert({
+        id: uid,
+        email: email,
+        full_name: (userMeta?.full_name as string) ?? (userMeta?.name as string) ?? null,
+        photo_url: (userMeta?.avatar_url as string) ?? (userMeta?.picture as string) ?? null,
+        role: 'member',
+        onboarded: false,
+      })
+      .select('*')
+      .maybeSingle()
+    if (cerr) {
+      console.error('profile create error', cerr)
+      setProfile(null)
+      return
+    }
+    if (created) setProfile(created as Profile)
   }
 
   const refreshProfile = async () => {

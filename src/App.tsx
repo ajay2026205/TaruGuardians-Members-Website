@@ -12,9 +12,12 @@ import Admin from './pages/Admin'
 import Settings from './pages/Settings'
 
 function Protected({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth()
+  const { session, profile, loading } = useAuth()
   if (loading) return <FullPageLoader label="Authenticating…" />
   if (!session) return <Navigate to="/login" replace />
+  // Session exists but profile still loading — don't bounce yet
+  if (!profile) return <FullPageLoader label="Loading your profile…" />
+  if (!profile.onboarded) return <Navigate to="/onboarding" replace />
   return <>{children}</>
 }
 
@@ -30,6 +33,9 @@ export default function App() {
 
   if (loading) return <FullPageLoader label="Loading TaruGuardians…" />
 
+  // Authenticated: show loader while profile loads (prevents login loop)
+  const authedAndLoadingProfile = session && !profile
+
   return (
     <Routes>
       <Route path="/login" element={session ? <Navigate to="/onboarding-check" replace /> : <Login />} />
@@ -37,18 +43,24 @@ export default function App() {
         path="/onboarding-check"
         element={
           session ? (
-            profile && !profile.onboarded ? <Navigate to="/onboarding" replace /> : <Navigate to="/dashboard" replace />
+            authedAndLoadingProfile ? (
+              <FullPageLoader label="Loading your profile…" />
+            ) : profile && !profile.onboarded ? (
+              <Navigate to="/onboarding" replace />
+            ) : (
+              <Navigate to="/dashboard" replace />
+            )
           ) : (
             <Navigate to="/login" replace />
           )
         }
       />
-      <Route path="/onboarding" element={session ? (profile && !profile.onboarded ? <Onboarding /> : <Navigate to="/dashboard" replace />) : <Navigate to="/login" replace />} />
-      <Route path="/dashboard" element={<Protected>{profile && !profile.onboarded ? <Navigate to="/onboarding" replace /> : <Dashboard />}</Protected>} />
-      <Route path="/members" element={<Protected>{profile && !profile.onboarded ? <Navigate to="/onboarding" replace /> : <Members />}</Protected>} />
-      <Route path="/tasks" element={<Protected>{profile && !profile.onboarded ? <Navigate to="/onboarding" replace /> : <Tasks />}</Protected>} />
-      <Route path="/chat" element={<Protected>{profile && !profile.onboarded ? <Navigate to="/onboarding" replace /> : <Chat />}</Protected>} />
-      <Route path="/schedule" element={<Protected>{profile && !profile.onboarded ? <Navigate to="/onboarding" replace /> : <Schedule />}</Protected>} />
+      <Route path="/onboarding" element={session ? (profile ? (profile.onboarded ? <Navigate to="/dashboard" replace /> : <Onboarding />) : <FullPageLoader label="Loading your profile…" />) : <Navigate to="/login" replace />} />
+      <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
+      <Route path="/members" element={<Protected><Members /></Protected>} />
+      <Route path="/tasks" element={<Protected><Tasks /></Protected>} />
+      <Route path="/chat" element={<Protected><Chat /></Protected>} />
+      <Route path="/schedule" element={<Protected><Schedule /></Protected>} />
       <Route path="/admin" element={<Protected><AdminOnly><Admin /></AdminOnly></Protected>} />
       <Route path="/settings" element={<Protected><AdminOnly><Settings /></AdminOnly></Protected>} />
       <Route path="/" element={<Navigate to={session ? (profile && !profile.onboarded ? '/onboarding' : '/dashboard') : '/login'} replace />} />
