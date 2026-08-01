@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { Logo } from '../components/Logo'
 import { Spinner } from '../components/ui'
-import { Mail, Lock, User, Chrome, ShieldCheck, Zap, Users } from 'lucide-react'
+import { Mail, Lock, User, Chrome, ShieldCheck, Zap, Users, TriangleAlert as AlertTriangle } from 'lucide-react'
 
-export const LOGIN_VERSION = 'v2.2'
+export const LOGIN_VERSION = 'v3.0'
 
 export default function Login() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const { session, authError, signOut } = useAuth()
+  const { session } = useAuth()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -19,24 +18,27 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const [oauthFailed, setOauthFailed] = useState(false)
 
   useEffect(() => {
-    const routeError = (location.state as { authError?: string } | null)?.authError
-    if (routeError) setError(routeError)
-  }, [location.state])
-
-  useEffect(() => {
-    if (session && authError) {
-      void signOut()
-      return
+    // Detect failed OAuth redirect: Supabase puts error params in the URL hash
+    const hash = window.location.hash
+    if (hash && (hash.includes('error') || hash.includes('error_description'))) {
+      const params = new URLSearchParams(hash.substring(1))
+      const errDesc = params.get('error_description') || params.get('error')
+      setOauthFailed(true)
+      setError(errDesc ? `Google sign-in failed: ${errDesc}` : 'Google sign-in failed. Google OAuth may not be configured. Use email/password instead.')
+      // Clean the URL
+      window.history.replaceState(null, '', window.location.pathname)
     }
     if (session) navigate('/onboarding-check', { replace: true })
-  }, [navigate, session])
+  }, [session, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setInfo(null)
+    setOauthFailed(false)
     if (!email.trim() || !password) {
       setError('Please enter your email and password.')
       return
@@ -90,6 +92,7 @@ export default function Login() {
 
   const handleGoogle = async () => {
     setError(null)
+    setOauthFailed(false)
     setLoading(true)
     const { error: oauthErr } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -98,7 +101,8 @@ export default function Login() {
       },
     })
     if (oauthErr) {
-      setError(oauthErr.message)
+      setError(`Google sign-in is not available: ${oauthErr.message}`)
+      setOauthFailed(true)
       setLoading(false)
     }
   }
@@ -107,6 +111,7 @@ export default function Login() {
     setMode(m)
     setError(null)
     setInfo(null)
+    setOauthFailed(false)
   }
 
   return (
@@ -121,6 +126,18 @@ export default function Login() {
             The private command center for an elite club. Sign in to access your content, tasks, and team.
           </p>
         </div>
+
+        {oauthFailed && (
+          <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber/30 bg-amber/10 p-4">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber" />
+            <div>
+              <p className="text-sm font-semibold text-amber">Google sign-in isn't working</p>
+              <p className="mt-1 text-xs text-amber/80">
+                Google OAuth hasn't been configured in Supabase yet. Use email/password below to create an account and sign in immediately.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="card p-8">
           <div className="mb-6 flex rounded-lg border border-white/10 bg-white/[0.02] p-1">
@@ -181,7 +198,7 @@ export default function Login() {
               )}
             </div>
 
-            {error && (
+            {error && !oauthFailed && (
               <p className="rounded-md border border-crimson/30 bg-crimson/10 px-4 py-2.5 text-sm text-crimson">{error}</p>
             )}
             {info && (
