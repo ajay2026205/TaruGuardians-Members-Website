@@ -1,6 +1,39 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, type Profile } from '../lib/supabase'
+
+// ─── Demo mode (auth bypassed) ──────────────────────────────────────
+// Authentication is temporarily disabled. A demo admin profile is
+// served directly so the app works without Google OAuth being
+// configured. To re-enable auth, revert this file to use
+// supabase.auth.getSession() + onAuthStateChange and restore the
+// original routing in App.tsx.
+
+const DEMO_PROFILE: Profile = {
+  id: '00000000-0000-0000-0000-000000000001',
+  email: 'admin@taruguardians.demo',
+  full_name: 'Taru Admin',
+  photo_url: null,
+  location: 'Mumbai, India',
+  role: 'admin',
+  onboarded: true,
+  created_at: new Date().toISOString(),
+}
+
+const DEMO_SESSION = {
+  access_token: 'demo',
+  refresh_token: 'demo',
+  expires_in: 999999,
+  token_type: 'bearer',
+  user: {
+    id: DEMO_PROFILE.id,
+    email: DEMO_PROFILE.email,
+    app_metadata: {},
+    user_metadata: { full_name: DEMO_PROFILE.full_name },
+    aud: 'authenticated',
+    created_at: DEMO_PROFILE.created_at,
+  },
+} as unknown as Session
 
 type AuthState = {
   session: Session | null
@@ -13,156 +46,31 @@ type AuthState = {
 }
 
 const AuthContext = createContext<AuthState>({
-  session: null,
-  profile: null,
-  loading: true,
+  session: DEMO_SESSION,
+  profile: DEMO_PROFILE,
+  loading: false,
   profileLoading: false,
   authError: null,
   signOut: async () => {},
   refreshProfile: async () => {},
 })
 
-const PROFILE_RETRY_DELAYS_MS = [250, 750, 1500]
-const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [profileLoading, setProfileLoading] = useState(false)
-  const [authError, setAuthError] = useState<string | null>(null)
-  const loadIdRef = useRef(0)
-
-  const loadProfile = useCallback(async (uid: string, email: string, userMeta?: Record<string, unknown>) => {
-    const loadId = ++loadIdRef.current
-    setProfileLoading(true)
-    setAuthError(null)
-
-    try {
-      for (let attempt = 0; attempt <= PROFILE_RETRY_DELAYS_MS.length; attempt += 1) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', uid)
-          .maybeSingle()
-
-        if (loadId !== loadIdRef.current) return
-
-        if (error) {
-          console.error('[auth] profile load error:', error.message)
-          setProfile(null)
-          setAuthError(`Could not load your profile: ${error.message}`)
-          return
-        }
-
-        if (data) {
-          setProfile(data as Profile)
-          return
-        }
-
-        const { data: created, error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: uid,
-            email,
-            full_name:
-              (userMeta?.full_name as string) ??
-              (userMeta?.name as string) ??
-              null,
-            photo_url:
-              (userMeta?.avatar_url as string) ??
-              (userMeta?.picture as string) ??
-              null,
-            role: 'member',
-            onboarded: false,
-          })
-          .select('*')
-          .maybeSingle()
-
-        if (loadId !== loadIdRef.current) return
-
-        if (created) {
-          setProfile(created as Profile)
-          return
-        }
-
-        if (createError && createError.code !== '23505') {
-          console.error('[auth] profile create error:', createError.message)
-        }
-
-        if (attempt < PROFILE_RETRY_DELAYS_MS.length) {
-          await wait(PROFILE_RETRY_DELAYS_MS[attempt])
-        }
-      }
-
-      setProfile(null)
-      setAuthError('Your login succeeded, but your profile could not be created. Please apply the latest Supabase migration and try again.')
-    } finally {
-      if (loadId === loadIdRef.current) setProfileLoading(false)
-    }
-  }, [])
+  const [profile] = useState<Profile | null>(DEMO_PROFILE)
+  const [session] = useState<Session | null>(DEMO_SESSION)
 
   const refreshProfile = useCallback(async () => {
-    if (session?.user?.id) {
-      await loadProfile(session.user.id, session.user.email ?? '', session.user.user_metadata)
-    }
-  }, [loadProfile, session])
-
-  useEffect(() => {
-    let mounted = true
-
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!mounted) return
-      if (error) setAuthError(error.message)
-      setSession(data.session)
-      if (data.session?.user?.id) {
-        loadProfile(
-          data.session.user.id,
-          data.session.user.email ?? '',
-          data.session.user.user_metadata,
-        ).finally(() => mounted && setLoading(false))
-      } else {
-        setLoading(false)
-      }
-    })
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-      if (!newSession?.user?.id) {
-        loadIdRef.current += 1
-        setProfile(null)
-        setProfileLoading(false)
-        setAuthError(null)
-        if (mounted) setLoading(false)
-        return
-      }
-
-      window.setTimeout(() => {
-        loadProfile(
-          newSession.user.id,
-          newSession.user.email ?? '',
-          newSession.user.user_metadata,
-        ).finally(() => mounted && setLoading(false))
-      }, 0)
-    })
-
-    return () => {
-      mounted = false
-      sub.subscription.unsubscribe()
-    }
-  }, [loadProfile])
+    // no-op in demo mode
+  }, [])
 
   const signOut = useCallback(async () => {
-    loadIdRef.current += 1
-    await supabase.auth.signOut()
-    setSession(null)
-    setProfile(null)
-    setProfileLoading(false)
-    setAuthError(null)
+    // no-op in demo mode — there's no real session to end
   }, [])
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, profileLoading, authError, signOut, refreshProfile }}>
+    <AuthContext.Provider
+      value={{ session, profile, loading: false, profileLoading: false, authError: null, signOut, refreshProfile }}
+    >
       {children}
     </AuthContext.Provider>
   )

@@ -74,7 +74,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const handleSignOut = async () => {
     await signOut()
-    navigate('/login')
+    navigate('/dashboard')
   }
 
   const items = isAdmin ? [...navItems, { to: '/admin', label: 'Admin', icon: ShieldCheck }, { to: '/settings', label: 'Settings', icon: Settings }] : navItems
